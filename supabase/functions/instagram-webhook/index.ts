@@ -17,19 +17,28 @@ serve(async (req) => {
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
 
-    console.log('Webhook verification request:', { mode, token, challenge });
+    console.log('Webhook verification request:', { mode, tokenPresent: !!token, challenge });
 
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('Webhook verified successfully');
-      return new Response(challenge, { status: 200 });
-    } else {
-      console.log('Webhook verification failed', { mode, token, expected: VERIFY_TOKEN });
-      const errorMessage = "The callback URL or verify token couldn't be validated. Please verify the provided information or try again later.";
-      return new Response(errorMessage, {
-        status: 403,
-        headers: { 'Content-Type': 'text/plain' },
-      });
+    if (mode === 'subscribe') {
+      if (!VERIFY_TOKEN) {
+        console.error('No VERIFY_TOKEN configured in environment');
+        const errorMessage = "The callback URL or verify token couldn't be validated. Please verify the provided information or try again later.";
+        return new Response(errorMessage, { status: 403, headers: { 'Content-Type': 'text/plain' } });
+      }
+
+      if (token === VERIFY_TOKEN) {
+        console.log('Webhook verified successfully');
+        // Meta expects the raw challenge string as a plain text response
+        const body = challenge ?? '';
+        return new Response(String(body), { status: 200, headers: { 'Content-Type': 'text/plain' } });
+      } else {
+        console.log('Webhook verification failed - token mismatch', { tokenPresent: !!token });
+        const errorMessage = "The callback URL or verify token couldn't be validated. Please verify the provided information or try again later.";
+        return new Response(errorMessage, { status: 403, headers: { 'Content-Type': 'text/plain' } });
+      }
     }
+
+    // Not a subscribe verification request; continue to other methods
   }
 
   // Handle POST request for webhook events
