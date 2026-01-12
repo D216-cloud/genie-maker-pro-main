@@ -1,3 +1,4 @@
+/// <reference path="../deno-types.d.ts" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -8,7 +9,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Read from env (recommended) and fallback to the original token for compatibility
 const VERIFY_TOKEN = Deno.env.get('INSTAGRAM_VERIFY_TOKEN') || 'reelychat_webhook_verify_token';
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const url = new URL(req.url);
   
   // Handle GET request for webhook verification
