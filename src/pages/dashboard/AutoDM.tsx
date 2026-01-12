@@ -215,6 +215,38 @@ const AutoDM = () => {
     }
   };
 
+  // Handle disconnect with loading state and user feedback
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const handleDisconnectClick = async () => {
+    if (disconnecting) return;
+    setDisconnecting(true);
+    try {
+      const result = await disconnectInstagram();
+      if (result?.success) {
+        toast({
+          title: 'Disconnected',
+          description: 'Instagram account disconnected.',
+        });
+      } else {
+        toast({
+          title: 'Failed to disconnect',
+          description: result?.error || 'Could not disconnect',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({
+        title: 'Error disconnecting',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   // Transform media to posts format for the modal
   const posts = media.map(m => ({
     id: m.id,
@@ -253,11 +285,12 @@ const AutoDM = () => {
             <>
               <Button 
                 variant="outline" 
-                onClick={disconnectInstagram}
+                onClick={handleDisconnectClick}
+                disabled={disconnecting}
                 className="flex-1 sm:flex-none active:scale-95 transition-transform text-sm"
                 size="sm"
               >
-                Disconnect
+                {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Disconnect'}
               </Button>
               <Button 
                 onClick={handleCreateAutomation} 
@@ -333,10 +366,11 @@ const AutoDM = () => {
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={disconnectInstagram}
+                onClick={handleDisconnectClick}
+                disabled={disconnecting}
                 className="text-muted-foreground hover:text-destructive hover:border-destructive active:scale-95 transition-all"
               >
-                Disconnect
+                {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Disconnect'}
               </Button>
             </div>
           </div>

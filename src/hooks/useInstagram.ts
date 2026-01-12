@@ -224,17 +224,28 @@ export const useInstagram = () => {
     }
   }, [user]);
 
-  // Disconnect Instagram
+  // Disconnect Instagram (return success/error so callers can provide feedback)
   const disconnectInstagram = useCallback(async () => {
-    if (!user) return;
+    if (!user) return { success: false, error: 'Not authenticated' };
 
-    await supabase
-      .from('instagram_connections')
-      .delete()
-      .eq('user_id', user.id);
+    try {
+      const { error } = await supabase
+        .from('instagram_connections')
+        .delete()
+        .eq('user_id', user.id);
 
-    setConnection(null);
-    setMedia([]);
+      if (error) {
+        console.error('Error deleting instagram connection:', error);
+        return { success: false, error: error.message || String(error) };
+      }
+
+      setConnection(null);
+      setMedia([]);
+      return { success: true };
+    } catch (err) {
+      console.error('Unexpected error deleting connection:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }, [user]);
 
   return {
