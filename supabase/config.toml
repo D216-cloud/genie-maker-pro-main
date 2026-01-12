@@ -1,0 +1,13 @@
+project_id = "xjfmphuwzcdbbzbeimnw"
+
+[functions.instagram-auth]
+verify_jwt = false
+
+[functions.instagram-posts]
+verify_jwt = false
+
+[functions.instagram-autodm]
+verify_jwt = true
+
+[functions.instagram-webhook]
+verify_jwt = false
