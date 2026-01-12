@@ -20,11 +20,13 @@ LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
 BEGIN
-  INSERT INTO public.profiles (user_id, full_name, phone)
+  INSERT INTO public.profiles (user_id, full_name, phone, email, provider)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data ->> 'full_name', ''),
-    COALESCE(NEW.raw_user_meta_data ->> 'phone', '')
+    COALESCE(NEW.raw_user_meta_data ->> 'phone', ''),
+    COALESCE(NEW.email, ''),
+    COALESCE(NEW.raw_user_meta_data ->> 'provider', COALESCE(NEW.app_metadata ->> 'provider', ''))
   );
   RETURN NEW;
 END;
@@ -35,8 +37,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
   full_name TEXT NOT NULL,
-  phone TEXT,
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  phone TEXT,  email TEXT,
+  provider TEXT,  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 

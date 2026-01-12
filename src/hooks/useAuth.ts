@@ -14,7 +14,14 @@ export const useAuth = () => {
         if (typeof window !== 'undefined' && (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token'))) {
           if (typeof supabase.auth.getSessionFromUrl === 'function') {
             const { data, error } = await supabase.auth.getSessionFromUrl();
-            if (error) console.error('getSessionFromUrl error', error);
+            if (error) {
+              console.error('getSessionFromUrl error', error);
+            } else if (data?.session) {
+              // Update local state immediately so components can react after OAuth redirect
+              setSession(data.session);
+              setUser(data.session.user ?? null);
+              setLoading(false);
+            }
             // Remove fragment from URL to keep things clean
             const cleanUrl = window.location.href.split('#')[0];
             window.history.replaceState({}, document.title, cleanUrl);
