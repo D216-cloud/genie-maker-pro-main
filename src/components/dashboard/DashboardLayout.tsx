@@ -6,12 +6,25 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useInstagram } from "@/hooks/useInstagram";
+import { useToast } from "@/hooks/use-toast";
 
 const MobileConnect = () => {
   const { connectInstagram, connecting, isConnected } = useInstagram();
+  const { toast } = useToast();
   return (
     <div>
-      <Button size="sm" variant="outline" onClick={() => connectInstagram()} disabled={connecting || isConnected}>
+      <Button size="sm" variant="outline" onClick={async () => {
+        try {
+          toast({ title: 'Redirecting to Instagram', description: 'You will be redirected to Instagram to complete the connection.' });
+          const res = await connectInstagram();
+          if (!res?.success) {
+            toast({ title: 'Failed to start Instagram auth', description: res?.error || 'Please try again', variant: 'destructive' });
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          toast({ title: 'Error', description: msg, variant: 'destructive' });
+        }
+      }} disabled={connecting || isConnected}>
         {connecting ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Connecting</span> : (isConnected ? (<span className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500" /> Connected</span>) : 'Connect')}
       </Button>
     </div>

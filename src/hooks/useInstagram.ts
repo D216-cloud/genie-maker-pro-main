@@ -139,16 +139,34 @@ export const useInstagram = () => {
 
       console.log('Auth URL response:', { data, error });
 
-      if (error) throw error;
-      if (data?.authUrl) {
-        // Store redirect URI for callback
+      // If the edge function returned a usable URL, use it
+      if (!error && data?.authUrl) {
         localStorage.setItem('instagram_redirect_uri', redirectUri);
-        // Redirect in same window for proper OAuth flow
+        // Navigate to Instagram OAuth URL
         window.location.href = data.authUrl;
+        // We won't reach here if navigation succeeded, but return success for callers/tests
+        return { success: true, authUrl: data.authUrl };
       }
+
+      // Fallback: construct client-side auth URL if server didn't provide it
+      const clientAppId = (import.meta.env.VITE_INSTAGRAM_APP_ID as string) || '';
+      if (!clientAppId) {
+        const msg = error?.message || 'Unable to start Instagram auth (no auth URL returned)';
+        console.error(msg, error);
+        setConnecting(false);
+        return { success: false, error: msg };
+      }
+
+      const scope = 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish';
+      const fallbackUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${clientAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
+
+      localStorage.setItem('instagram_redirect_uri', redirectUri);
+      window.location.href = fallbackUrl;
+      return { success: true, authUrl: fallbackUrl };
     } catch (err) {
       console.error('Error starting Instagram auth:', err);
       setConnecting(false);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   }, []);
 

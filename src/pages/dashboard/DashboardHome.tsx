@@ -274,7 +274,7 @@ const DashboardHome = () => {
                     </div>
                   </div>
                   <div>
-                    <Button className="w-full sm:w-auto" size="sm" onClick={async () => { await connectInstagram(); }} disabled={connecting}>
+                    <Button className="w-full sm:w-auto" size="sm" onClick={async () => { try { toast({ title: 'Redirecting to Instagram', description: 'You will be redirected to Instagram to complete the connection.' }); const res = await connectInstagram(); if (!res?.success) { toast({ title: 'Failed to start Instagram auth', description: res?.error || 'Please try again', variant: 'destructive' }); } } catch (err) { const msg = err instanceof Error ? err.message : String(err); toast({ title: 'Error', description: msg, variant: 'destructive' }); } }} disabled={connecting}>
                       {connecting ? (<span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Connecting</span>) : (isConnected ? (<span className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500" /> Connected</span>) : 'Connect')}</Button>
                   </div>
                 </div>

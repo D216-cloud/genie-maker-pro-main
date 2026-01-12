@@ -303,7 +303,18 @@ const AutoDM = () => {
             </>
           ) : (
             <Button 
-              onClick={connectInstagram} 
+              onClick={async () => {
+                try {
+                  toast({ title: 'Redirecting to Instagram', description: 'You will be redirected to Instagram to complete the connection.' });
+                  const res = await connectInstagram();
+                  if (!res?.success) {
+                    toast({ title: 'Failed to start Instagram auth', description: res?.error || 'Please try again', variant: 'destructive' });
+                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  toast({ title: 'Error', description: msg, variant: 'destructive' });
+                }
+              }} 
               disabled={connecting} 
               className="w-full sm:w-auto gap-2 active:scale-95 transition-transform bg-gradient-to-r from-amber-400 to-amber-500 text-white"
             >
@@ -404,7 +415,18 @@ const AutoDM = () => {
               Upgrade to Premium
             </Button>
             <Button 
-              onClick={connectInstagram} 
+              onClick={async () => {
+                try {
+                  toast({ title: 'Redirecting to Instagram', description: 'You will be redirected to Instagram to complete the connection.' });
+                  const res = await connectInstagram();
+                  if (!res?.success) {
+                    toast({ title: 'Failed to start Instagram auth', description: res?.error || 'Please try again', variant: 'destructive' });
+                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  toast({ title: 'Error', description: msg, variant: 'destructive' });
+                }
+              }} 
               disabled={connecting} 
               size="lg" 
               variant="outline"
