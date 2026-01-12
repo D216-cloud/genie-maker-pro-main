@@ -8,7 +8,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Read from env (recommended) and fallback to the original token for compatibility
 const VERIFY_TOKEN = Deno.env.get('INSTAGRAM_VERIFY_TOKEN') || 'reelychat_webhook_verify_token';
 
-serve(async (req: Request) => {
+serve(async (req) => {
   const url = new URL(req.url);
   
   // Handle GET request for webhook verification
