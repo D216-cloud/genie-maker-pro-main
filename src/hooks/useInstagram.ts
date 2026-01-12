@@ -34,46 +34,69 @@ export const useInstagram = () => {
   const [connecting, setConnecting] = useState(false);
 
   // Fetch existing connection
-  useEffect(() => {
+  const fetchConnection = useCallback(async () => {
+    // Loading only while fetching data
+    setLoading(true);
+
     if (!user) {
       setConnection(null);
       setLoading(false);
       return;
     }
 
-    const fetchConnection = async () => {
-      try {
-        const { data, error, status } = await supabase
-          .from('instagram_connections')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
+    try {
+      const { data, error, status } = await supabase
+        .from('instagram_connections')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-        // Table or endpoint not found (404) - do not spam console with errors
-        if (status === 404) {
-          console.warn('instagram_connections table not found (404) - skipping connection fetch');
-          setConnection(null);
-          setLoading(false);
-          return;
-        }
-
-        if (error) {
-          console.error('Error fetching instagram connection:', error);
-          setConnection(null);
-        } else if (data) {
-          setConnection(data as InstagramConnection);
-        }
-      } catch (err) {
-        // Network or unexpected error
-        console.error('Unexpected error fetching instagram connection:', err);
+      // Table or endpoint not found (404) - do not spam console with errors
+      if (status === 404) {
+        console.warn('instagram_connections table not found (404) - skipping connection fetch');
         setConnection(null);
-      } finally {
         setLoading(false);
+        return;
+      }
+
+      if (error) {
+        console.error('Error fetching instagram connection:', error);
+        setConnection(null);
+      } else if (data) {
+        setConnection(data as InstagramConnection);
+      } else {
+        setConnection(null);
+      }
+    } catch (err) {
+      // Network or unexpected error
+      console.error('Unexpected error fetching instagram connection:', err);
+      setConnection(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchConnection();
+
+    // Listen for cross-tab storage changes to refresh connection
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'instagram_connection_refresh') {
+        fetchConnection();
       }
     };
 
-    fetchConnection();
-  }, [user]);
+    // Listen for same-tab custom event to refresh immediately
+    const onConnectionChanged = () => fetchConnection();
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('instagram-connection-changed', onConnectionChanged as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('instagram-connection-changed', onConnectionChanged as EventListener);
+    };
+  }, [fetchConnection]);
 
   // Fetch media when connected
   useEffect(() => {
@@ -138,36 +161,58 @@ export const useInstagram = () => {
     accountType?: string;
     mediaCount?: number;
   }> => {
-    // Wait for auth to finish loading
-    const waitForAuth = (): Promise<string | null> => {
+    // Wait for auth to finish loading with retries
+    const waitForAuth = (timeout = 15000): Promise<string | null> => {
       return new Promise((resolve) => {
         // If already have user, return immediately
         if (user) {
           resolve(user.id);
           return;
         }
-        
-        // Otherwise listen for auth state
+
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
           if (session?.user) {
             subscription.unsubscribe();
             resolve(session.user.id);
           }
         });
-        
-        // Also check current session
+
+        // Also check current session right away
         supabase.auth.getSession().then(({ data: { session } }) => {
           if (session?.user) {
             subscription.unsubscribe();
             resolve(session.user.id);
           }
         });
-        
-        // Timeout after 5 seconds
-        setTimeout(() => {
+
+        // Retry getSession a few times in case of slight delays
+        const interval = setInterval(() => {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+              clearInterval(interval);
+              subscription.unsubscribe();
+              resolve(session.user.id);
+            }
+          });
+        }, 1000);
+
+        // Timeout after given time
+        const to = setTimeout(() => {
+          clearInterval(interval);
           subscription.unsubscribe();
-          resolve(null);
-        }, 5000);
+          // Try one last chance to parse session from URL fragment (works for providers that return tokens in hash)
+          if (typeof supabase.auth.getSessionFromUrl === 'function') {
+            supabase.auth.getSessionFromUrl().then(({ data, error }) => {
+              if (data?.session?.user) {
+                resolve(data.session.user.id);
+              } else {
+                resolve(null);
+              }
+            }).catch(() => resolve(null));
+          } else {
+            resolve(null);
+          }
+        }, timeout);
       });
     };
 
@@ -191,8 +236,8 @@ export const useInstagram = () => {
 
       if (error) throw error;
 
-      // Save connection to database
-      const { error: saveError } = await supabase
+      // Save connection to database and return the saved row so UI updates immediately
+      const { data: savedConnection, error: saveError } = await supabase
         .from('instagram_connections')
         .upsert({
           user_id: userId,
@@ -206,9 +251,25 @@ export const useInstagram = () => {
           expires_at: data.expiresIn 
             ? new Date(Date.now() + data.expiresIn * 1000).toISOString()
             : null,
-        });
+        })
+        .select()
+        .maybeSingle();
 
       if (saveError) throw saveError;
+
+      // Update local state so the UI immediately reflects the new connection
+      setConnection(savedConnection as InstagramConnection);
+
+      // Trigger media fetch by effect (connection changed), but we can also prefill media if available
+      setMedia([]);
+
+      // Notify other components/tabs to refresh their connection state
+      try {
+        localStorage.setItem('instagram_connection_refresh', String(Date.now()));
+        window.dispatchEvent(new Event('instagram-connection-changed'));
+      } catch (e) {
+        // ignore storage failures
+      }
 
       localStorage.removeItem('instagram_redirect_uri');
       return { 

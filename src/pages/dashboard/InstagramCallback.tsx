@@ -61,6 +61,9 @@ const InstagramCallback = () => {
             mediaCount: result.mediaCount || null,
           });
           setMessage('Your Instagram account has been connected successfully!');
+
+          // Auto-redirect back to AutoDM so the newly connected account is visible
+          setTimeout(() => navigate('/dashboard/autodm'), 900);
         } else {
           setStatus('error');
           setMessage(result.error || 'Failed to connect Instagram account. Please try again.');
