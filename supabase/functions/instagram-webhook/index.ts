@@ -8,7 +8,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Read from env (recommended) and fallback to the original token for compatibility
 const VERIFY_TOKEN = Deno.env.get('INSTAGRAM_VERIFY_TOKEN') || 'reelychat_webhook_verify_token';
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const url = new URL(req.url);
   
   // Handle GET request for webhook verification
@@ -23,8 +23,12 @@ serve(async (req) => {
       console.log('Webhook verified successfully');
       return new Response(challenge, { status: 200 });
     } else {
-      console.log('Webhook verification failed');
-      return new Response('Forbidden', { status: 403 });
+      console.log('Webhook verification failed', { mode, token, expected: VERIFY_TOKEN });
+      const errorMessage = "The callback URL or verify token couldn't be validated. Please verify the provided information or try again later.";
+      return new Response(errorMessage, {
+        status: 403,
+        headers: { 'Content-Type': 'text/plain' },
+      });
     }
   }
 
@@ -35,6 +39,68 @@ serve(async (req) => {
       console.log('Webhook event received:', JSON.stringify(body, null, 2));
 
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+      // Handle Data Deletion Requests from Meta / Instagram
+      // Meta may send a user data deletion request containing a `user_id` and `confirmation_code` (or nested under `data_deletion_request`).
+      // We attempt to remove app data tied to this user (profiles, instagram_connections, automations, logs) and return a confirmation.
+      const userId = body.user_id || body.data_deletion_request?.user_id || body.deletionRequest?.user_id || null;
+      const confirmationCode = body.confirmation_code || body.data_deletion_request?.confirmation_code || body.deletionRequest?.confirmation_code || null;
+
+      if (userId) {
+        console.log('Received data deletion request for user:', userId, 'confirmationCode:', confirmationCode);
+        try {
+          // Delete any instagram_connections that reference this Instagram account id
+          const { error: delByInstagramIdError } = await supabase
+            .from('instagram_connections')
+            .delete()
+            .eq('instagram_account_id', String(userId));
+          if (delByInstagramIdError) console.error('Error deleting instagram_connections by instagram_account_id:', delByInstagramIdError);
+
+          // Delete any connections that reference this auth user id
+          const { error: delByUserIdError } = await supabase
+            .from('instagram_connections')
+            .delete()
+            .eq('user_id', userId);
+          if (delByUserIdError) console.error('Error deleting instagram_connections by user_id:', delByUserIdError);
+
+          // Delete automations and associated logs for this user
+          const { error: delAutomationsError } = await supabase
+            .from('instagram_automations')
+            .delete()
+            .eq('user_id', userId);
+          if (delAutomationsError) console.error('Error deleting instagram_automations:', delAutomationsError);
+
+          const { error: delLogsError } = await supabase
+            .from('automation_logs')
+            .delete()
+            .eq('commenter_id', userId);
+          if (delLogsError) console.error('Error deleting automation_logs by commenter_id:', delLogsError);
+
+          // Delete the profile row for this user if it exists
+          const { error: delProfilesError } = await supabase
+            .from('profiles')
+            .delete()
+            .eq('user_id', userId);
+          if (delProfilesError) console.error('Error deleting profiles:', delProfilesError);
+
+          // NOTE: We intentionally do NOT delete auth.users here; deletion of auth accounts is a separate action.
+
+          // Respond to Meta with success and include the confirmation code if present
+          const responsePayload: Record<string, unknown> = { success: true };
+          if (confirmationCode) responsePayload.confirmation_code = confirmationCode;
+
+          return new Response(JSON.stringify(responsePayload), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        } catch (err) {
+          console.error('Error processing data deletion request:', err);
+          return new Response(JSON.stringify({ error: 'Error processing deletion' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
 
       // Process Instagram comment events
       if (body.object === 'instagram') {
