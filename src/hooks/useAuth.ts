@@ -8,6 +8,25 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // If the URL contains an OAuth session fragment, parse it and store session
+    const parseSessionFromUrl = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token'))) {
+          if (typeof supabase.auth.getSessionFromUrl === 'function') {
+            const { data, error } = await supabase.auth.getSessionFromUrl();
+            if (error) console.error('getSessionFromUrl error', error);
+            // Remove fragment from URL to keep things clean
+            const cleanUrl = window.location.href.split('#')[0];
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+        }
+      } catch (err) {
+        console.error('Error parsing session from URL:', err);
+      }
+    };
+
+    parseSessionFromUrl();
+
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
