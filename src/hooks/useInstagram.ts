@@ -130,15 +130,11 @@ export const useInstagram = () => {
       const redirectUri = `${window.location.origin}/dashboard/instagram-callback`;
       console.log('Starting Instagram OAuth with redirect URI:', redirectUri);
       
-      const session = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('instagram-auth', {
         body: { 
           action: 'get-auth-url',
           redirectUri 
         },
-        headers: {
-          'Authorization': `Bearer ${session.data.session?.access_token || ''}`
-        }
       });
 
       console.log('Auth URL response:', { data, error });
@@ -248,16 +244,12 @@ export const useInstagram = () => {
       const redirectUri = localStorage.getItem('instagram_redirect_uri') || 
         `${window.location.origin}/dashboard/instagram-callback`;
 
-      const session = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('instagram-auth', {
         body: { 
           action: 'exchange-token',
           code, 
           redirectUri 
         },
-        headers: {
-          'Authorization': `Bearer ${session.data.session?.access_token || ''}`
-        }
       });
 
       if (error) throw error;
