@@ -1,20 +1,14 @@
-/// <reference path="./deno-types.d.ts" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, Authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-serve(async (req: Request) => { // Request typed for editor using local deno-types.d.ts
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
-
-  // Authentication helpers — define headers and service key (sensitive actions will validate these)
-  const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
-  const serviceRoleHeader = req.headers.get('x-service-role-key') || req.headers.get('x-supabase-service-role-key');
-  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   const INSTAGRAM_APP_ID = Deno.env.get('INSTAGRAM_APP_ID');
   const INSTAGRAM_APP_SECRET = Deno.env.get('INSTAGRAM_APP_SECRET');
@@ -50,17 +44,6 @@ serve(async (req: Request) => { // Request typed for editor using local deno-typ
     console.log('Instagram auth action:', action);
     console.log('Redirect URI:', redirectUri);
     console.log('Code provided:', !!code);
-
-    // Require authentication only for sensitive actions (e.g. exchange-token)
-    if (action === 'exchange-token') {
-      if (!authHeader && (!serviceRoleHeader || serviceRoleHeader !== SUPABASE_SERVICE_ROLE_KEY)) {
-        console.warn('Unauthorized exchange-token request to instagram-auth');
-        return new Response(JSON.stringify({ error: 'Missing Authorization header or invalid service role key' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-    }
 
     if (!action) {
       return new Response(JSON.stringify({ error: 'Missing action parameter' }), {
