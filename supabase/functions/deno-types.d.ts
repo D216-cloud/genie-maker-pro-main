@@ -25,5 +25,9 @@ declare type Response = any;
 
 declare function fetch(input: any, init?: any): Promise<any>;
 
-declare function console.log(...args: any[]): void;
-declare function console.error(...args: any[]): void;
+interface Console {
+  log(...args: any[]): void;
+  error(...args: any[]): void;
+}
+
+declare const console: Console;

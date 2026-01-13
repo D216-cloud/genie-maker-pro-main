@@ -1,3 +1,4 @@
+/// <reference path="./deno-types.d.ts" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -5,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, Authorization, x-client-info, apikey, content-type',
 };
 
-serve(async (req) => {
+serve(async (req: Request) => { // Request typed for editor using local deno-types.d.ts
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
