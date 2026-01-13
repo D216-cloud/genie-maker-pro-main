@@ -1,15 +1,22 @@
-/// <reference path="../deno-types.d.ts" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-// Webhook verification token - should match what you set in Meta Developer Console
-// Read from env (recommended) and fallback to the original token for compatibility
 const VERIFY_TOKEN = Deno.env.get('INSTAGRAM_VERIFY_TOKEN') || 'reelychat_webhook_verify_token';
 
-serve(async (req: Request) => {
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   const url = new URL(req.url);
   
   // Handle GET request for webhook verification
@@ -23,23 +30,20 @@ serve(async (req: Request) => {
     if (mode === 'subscribe') {
       if (!VERIFY_TOKEN) {
         console.error('No VERIFY_TOKEN configured in environment');
-        const errorMessage = "The callback URL or verify token couldn't be validated. Please verify the provided information or try again later.";
-        return new Response(errorMessage, { status: 403, headers: { 'Content-Type': 'text/plain' } });
+        return new Response('', { status: 403, headers: corsHeaders });
       }
 
       if (token === VERIFY_TOKEN) {
         console.log('Webhook verified successfully');
-        // Meta expects the raw challenge string as a plain text response
         const body = challenge ?? '';
-        return new Response(String(body), { status: 200, headers: { 'Content-Type': 'text/plain' } });
+        return new Response(String(body), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'text/plain' } });
       } else {
         console.log('Webhook verification failed - token mismatch', { tokenPresent: !!token });
-        const errorMessage = "The callback URL or verify token couldn't be validated. Please verify the provided information or try again later.";
-        return new Response(errorMessage, { status: 403, headers: { 'Content-Type': 'text/plain' } });
+        return new Response('', { status: 403, headers: corsHeaders });
       }
     }
 
-    // Not a subscribe verification request; continue to other methods
+    return new Response('', { status: 403, headers: corsHeaders });
   }
 
   // Handle POST request for webhook events
@@ -51,63 +55,30 @@ serve(async (req: Request) => {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
       // Handle Data Deletion Requests from Meta / Instagram
-      // Meta may send a user data deletion request containing a `user_id` and `confirmation_code` (or nested under `data_deletion_request`).
-      // We attempt to remove app data tied to this user (profiles, instagram_connections, automations, logs) and return a confirmation.
       const userId = body.user_id || body.data_deletion_request?.user_id || body.deletionRequest?.user_id || null;
       const confirmationCode = body.confirmation_code || body.data_deletion_request?.confirmation_code || body.deletionRequest?.confirmation_code || null;
 
       if (userId) {
         console.log('Received data deletion request for user:', userId, 'confirmationCode:', confirmationCode);
         try {
-          // Delete any instagram_connections that reference this Instagram account id
-          const { error: delByInstagramIdError } = await supabase
-            .from('instagram_connections')
-            .delete()
-            .eq('instagram_account_id', String(userId));
-          if (delByInstagramIdError) console.error('Error deleting instagram_connections by instagram_account_id:', delByInstagramIdError);
+          await supabase.from('instagram_connections').delete().eq('instagram_account_id', String(userId));
+          await supabase.from('instagram_connections').delete().eq('user_id', userId);
+          await supabase.from('instagram_automations').delete().eq('user_id', userId);
+          await supabase.from('automation_logs').delete().eq('commenter_id', userId);
+          await supabase.from('profiles').delete().eq('user_id', userId);
 
-          // Delete any connections that reference this auth user id
-          const { error: delByUserIdError } = await supabase
-            .from('instagram_connections')
-            .delete()
-            .eq('user_id', userId);
-          if (delByUserIdError) console.error('Error deleting instagram_connections by user_id:', delByUserIdError);
-
-          // Delete automations and associated logs for this user
-          const { error: delAutomationsError } = await supabase
-            .from('instagram_automations')
-            .delete()
-            .eq('user_id', userId);
-          if (delAutomationsError) console.error('Error deleting instagram_automations:', delAutomationsError);
-
-          const { error: delLogsError } = await supabase
-            .from('automation_logs')
-            .delete()
-            .eq('commenter_id', userId);
-          if (delLogsError) console.error('Error deleting automation_logs by commenter_id:', delLogsError);
-
-          // Delete the profile row for this user if it exists
-          const { error: delProfilesError } = await supabase
-            .from('profiles')
-            .delete()
-            .eq('user_id', userId);
-          if (delProfilesError) console.error('Error deleting profiles:', delProfilesError);
-
-          // NOTE: We intentionally do NOT delete auth.users here; deletion of auth accounts is a separate action.
-
-          // Respond to Meta with success and include the confirmation code if present
           const responsePayload: Record<string, unknown> = { success: true };
           if (confirmationCode) responsePayload.confirmation_code = confirmationCode;
 
           return new Response(JSON.stringify(responsePayload), {
             status: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         } catch (err) {
           console.error('Error processing data deletion request:', err);
           return new Response(JSON.stringify({ error: 'Error processing deletion' }), {
             status: 500,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
       }
@@ -133,7 +104,6 @@ serve(async (req: Request) => {
                 continue;
               }
 
-              // Find the user who owns this Instagram account
               const { data: connection, error: connectionError } = await supabase
                 .from('instagram_connections')
                 .select('*')
@@ -148,7 +118,6 @@ serve(async (req: Request) => {
               console.log('Found connection for user:', connection.user_id);
               console.log('Incoming webhook mediaId:', mediaId);
 
-              // Find active automations for this user
               const { data: automations, error: automationsError } = await supabase
                 .from('instagram_automations')
                 .select('*')
@@ -162,7 +131,6 @@ serve(async (req: Request) => {
 
               console.log('Found total active automations:', automations?.length || 0);
 
-              // Process each automation and check if it matches
               for (const automation of automations || []) {
                 console.log('Checking automation:', {
                   id: automation.id,
@@ -172,7 +140,6 @@ serve(async (req: Request) => {
                   incoming_media_id: mediaId,
                 });
 
-                // STRICT MATCHING: Either apply_to_all is true OR media_id matches exactly
                 const matchesPost = 
                   automation.apply_to_all === true || 
                   (automation.media_id !== null && automation.media_id === mediaId);
@@ -184,7 +151,6 @@ serve(async (req: Request) => {
 
                 console.log(`Automation ${automation.id} MATCHES post!`);
 
-                // Check keyword match
                 const keywords: string[] = automation.keywords || [];
                 const matchesKeyword = keywords.length === 0 || 
                   keywords.some((keyword: string) => 
@@ -198,10 +164,8 @@ serve(async (req: Request) => {
 
                 console.log('Comment matches keywords! Proceeding to send DM...');
 
-                // Use the access token (prefer page_access_token if available)
                 const accessToken = connection.page_access_token || connection.access_token;
 
-                // 1. Auto-reply to comment (if enabled)
                 if (automation.auto_reply_enabled && automation.comment_responses?.length > 0) {
                   const responses: string[] = automation.comment_responses;
                   const randomResponse = responses[Math.floor(Math.random() * responses.length)];
@@ -226,17 +190,11 @@ serve(async (req: Request) => {
                   }
                 }
 
-                // 2. Send DM to commenter
                 try {
                   console.log('Sending DM to commenter:', commenterId);
                   
-                  // Instagram Graph API for sending DMs
-                  // First, we need to get the Instagram-scoped user ID (IGSID) for the commenter
-                  // The DM is sent via the Instagram account, not Facebook Page
-                  
                   const dmMessage = automation.dm_message;
                   
-                  // Use Instagram Graph API messaging endpoint
                   const dmResponse = await fetch(
                     `https://graph.instagram.com/v21.0/${instagramAccountId}/messages`,
                     {
@@ -253,7 +211,6 @@ serve(async (req: Request) => {
                   const dmData = await dmResponse.json();
                   console.log('DM response:', JSON.stringify(dmData, null, 2));
 
-                  // Log the automation execution
                   await supabase.from('automation_logs').insert({
                     automation_id: automation.id,
                     comment_id: commentId,
@@ -268,7 +225,6 @@ serve(async (req: Request) => {
                 } catch (dmError) {
                   console.error('Error sending DM:', dmError);
                   
-                  // Log the error
                   await supabase.from('automation_logs').insert({
                     automation_id: automation.id,
                     comment_id: commentId,
@@ -281,11 +237,9 @@ serve(async (req: Request) => {
               }
             }
 
-            // Handle messaging events (for conversation flow)
             if (change.field === 'messages') {
               const message = change.value;
               console.log('New message received:', JSON.stringify(message, null, 2));
-              // Future: Handle follow-up message flows here
             }
           }
         }
@@ -293,7 +247,7 @@ serve(async (req: Request) => {
 
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
 
     } catch (error: unknown) {
@@ -301,10 +255,10 @@ serve(async (req: Request) => {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return new Response(JSON.stringify({ error: message }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
   }
 
-  return new Response('Method not allowed', { status: 405 });
+  return new Response('', { status: 405, headers: corsHeaders });
 });
