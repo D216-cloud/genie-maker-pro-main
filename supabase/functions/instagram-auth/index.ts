@@ -10,6 +10,12 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Extract JWT from Authorization header if present
+  const authHeader = req.headers.get('authorization');
+  const token = authHeader?.replace('Bearer ', '') || null;
+  
+  console.log('Request received with auth token present:', !!token);
+
   const INSTAGRAM_APP_ID = Deno.env.get('INSTAGRAM_APP_ID');
   const INSTAGRAM_APP_SECRET = Deno.env.get('INSTAGRAM_APP_SECRET');
 
