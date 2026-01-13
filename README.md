@@ -82,9 +82,52 @@ If you want to enable "Continue with Google" sign-in:
 
 2. In your Supabase project dashboard → Authentication → Settings → External OAuth Providers, paste the Google Client ID and Client Secret.
 
-3. Add the following to your local `.env` (do NOT commit secrets):
-   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `CLIENT_URL` (e.g., `http://localhost:8080`)
+3. Create a local `.env` from `.env.example` and fill in real values (do NOT commit secrets):
+   - Copy the example: `cp .env.example .env` (on Windows: `copy .env.example .env`)
+   - Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `CLIENT_URL` (e.g., `http://localhost:8080`)
    - Optionally `VITE_GOOGLE_CLIENT_ID` for client-side use.
+   - **Security note:** If a secret was ever committed, rotate it immediately (Supabase service keys, Instagram tokens) and remove it from repository history using tools like the BFG Repo-Cleaner or `git filter-repo`. Do not push the rotated secret to a public repo.
+
+- **Secret scanning:** This repository runs an automated secret-scan (Gitleaks) on pushes and pull requests to catch accidental secrets before merging.
+
+## Supabase Edge Function: Instagram auth (setup)
+
+If you use the included `instagram-auth` edge function (used during Instagram OAuth):
+
+1. Add required secrets to your Supabase project (do NOT commit them to git):
+
+```sh
+supabase secrets set INSTAGRAM_APP_ID=your_app_id
+supabase secrets set INSTAGRAM_APP_SECRET=your_app_secret
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+2. Deploy the function and (if you want it public to allow browser calls) disable JWT enforcement when deploying:
+
+```sh
+supabase functions deploy instagram-auth --no-verify-jwt
+```
+
+3. Alternatively, call the function from a server using the service role key header `x-service-role-key: <SERVICE_ROLE_KEY>` for server-to-server requests.
+
+4. Test the function from your browser or curl with either an Authorization header (logged-in user) or the `x-service-role-key` header:
+
+```sh
+curl -v -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <USER_JWT>" \
+  -d '{"action":"exchange-token","code":"<CODE>","redirectUri":"https://your.app/callback"}' \
+  https://<your-project>.supabase.co/functions/v1/instagram-auth
+
+# Or server-to-server
+curl -v -X POST \
+  -H "Content-Type: application/json" \
+  -H "x-service-role-key: <SERVICE_ROLE_KEY>" \
+  -d '{"action":"exchange-token","code":"<CODE>","redirectUri":"https://your.app/callback"}' \
+  https://<your-project>.supabase.co/functions/v1/instagram-auth
+```
+
+If you previously committed secrets, rotate them immediately and purge history (BFG or `git filter-repo`).
 
 4. Restart the dev server and open `http://localhost:5173` → Sign In → "Continue with Google".
 
